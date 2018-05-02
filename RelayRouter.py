@@ -1,6 +1,7 @@
 import Packet
 from const import *
 from channel import global_send, current_time
+import client
 new_online_router = []
 new_offline_router = []
 
@@ -8,6 +9,7 @@ new_offline_router = []
 class DirectoryServer():
 	def __init__(self):
 		self._global_table = {}
+		self._client_table = {}
 	def set_global_table(self, global_table):
 		self._global_table = global_table
 	def update_global_table(self):
@@ -24,7 +26,11 @@ class DirectoryServer():
 	def get_global_table(self):
 		return self._global_table
 	def get_router_object_by_id(self, id):
-		return self._global_table[id]
+		if id in self._global_table:
+			return self._global_table[id]
+		if id in self._client_table:
+			return self._client_table[id]
+
 
 d = DirectoryServer()
 
@@ -33,9 +39,9 @@ Center_Directory_Server = DirectoryServer()
 
 
 class RelayRouter():
-	def __init__(self, id, ip, bandwidth, region, buffer_size, flag, status):
+	def __init__(self, id, bandwidth, region, buffer_size, flag, status):
 		self.id = id
-		self.ip = ip
+		self.ip = id
 		self._bandwidth = bandwidth   					# KB/s
 		self.region = region
 		self._buffer_size = buffer_size 				# max buffer size
@@ -49,8 +55,12 @@ class RelayRouter():
 		self._buffer = []
 		self._buffer_used = 0
 		self._next_trans_time = 0
+		self._rend_circuit_id = 0
+		self._circuit_map = {}
+		self._rend_establishing_table = {}
+		self._rend_established_table = {}      #{circuit_id : circuit_id}
 		self.online()
-
+ 
 	def online(self):
 		self.status = ONLINE
 		new_online_router.append(self)
@@ -64,9 +74,11 @@ class RelayRouter():
 
 
 	def find_a_relay_note(self):
-		reply = HandshakePacket(0, str(HANDSHAKE_COMMAND["RELAY_NOTE_FINDED"]) + str(self.id))
-		return_route_table = self.current_handle.get_fixed_route_table().reverse()
-		reply.set_fixed_route_table(return_route_table)
+		c_id = self.current_handle.get_circuit_id()
+		reply = Packet.HandshakePacket(c_id, str(HANDSHAKE_COMMAND["RELAY_NOTE_FINDED"]) + str(self.id))
+		route_table = self.current_handle.get_fixed_route_table()
+		route_table.reverse()
+		reply.set_fixed_route_table(route_table)
 		self.send(self.current_handle.get_from(), reply)
 
 	def relay_note_finded(self):
@@ -74,7 +86,7 @@ class RelayRouter():
 		logging.error("Router receives a RELAY_NOTE_FINDED packet.")
 
 	def extend_circuit(self):
-		reply = HandshakePacket(0, str(HANDSHAKE_COMMAND["CIRCUIT_EXTENDED"]) + str(self.id))
+		reply = Packet.HandshakePacket(0, str(HANDSHAKE_COMMAND["CIRCUIT_EXTENDED"]) + str(self.id))
 		return_route_table = self.current_handle.get_fixed_route_table().reverse()
 		reply.set_fixed_route_table(return_route_table)
 		self.send(self.current_handle.get_from(), reply)
@@ -83,17 +95,49 @@ class RelayRouter():
 	def circuit_extended(self):
 		pass
 
-	def terminate_circuit(self):
+	def establish_rendezvous(self):
+		rend_id = self.current_handle.get_circuit_id()
+		current_circuit_id = rend_id
+		prefix = rend_id.split(':')[0]
+		self._rend_circuit_id += 1
+
+		flag = 0   # send it to the client, 0 means its communication object has not prepared; 1 means its communication object has prepared.
+		if prefix in self._rend_establishing_table:
+			target_circuit_id = self._rend_establishing_table[prefix]
+			self._rend_established_table[current_circuit_id] = target_circuit_id
+			self._rend_established_table[target_circuit_id] = current_circuit_id
+			del self._rend_establishing_table[prefix]
+			flag = 1
+			# inform the target client that the other side has prepared.
+			#ASSERT(target_circuit_id in self._circuit_map)
+			target_cirobj = self._circuit_map[target_circuit_id]
+			info_reply = Packet.HandshakePacket(target_circuit_id, str(HANDSHAKE_COMMAND["RENDEZVOUS_ESTABLISHED"]) + str(flag) + str(target_circuit_id))
+			info_reply.set_fixed_route_table(target_cirobj.route_table)
+			self.send(target_cirobj.route_table[1], info_reply)
+
+		else:
+			
+			self._rend_establishing_table[prefix] = rend_id
+			flag = 0
+
+
+		reply = Packet.HandshakePacket(rend_id, str(HANDSHAKE_COMMAND["RENDEZVOUS_ESTABLISHED"]) + str(flag) + str(current_circuit_id))
+		route_table = self.current_handle.get_fixed_route_table()
+		route_table.reverse()
+		cirobj = client.Circuit(current_circuit_id, route_table, None, None)
+		self._circuit_map[current_circuit_id] = cirobj
+		reply.set_fixed_route_table(route_table)
+		self.send(self.current_handle.get_from(), reply)
 		pass
 
-	def circuit_terminated(self):
+	def rendezvous_established(self):
 		pass
 
 
 	def parse_handshake_packet(self):
 		hspkt = self.current_handle
 		next_rp = hspkt.get_next_route()
-		if next_rp != 0:
+		if next_rp != 0 and next_rp != self.id:
 			self.send(next_rp, hspkt)
 			return
 
@@ -107,10 +151,10 @@ class RelayRouter():
 			self.extend_circuit()
 		elif cmd_flag == HANDSHAKE_COMMAND["CIRCUIT_EXTENDED"]:
 			self.circuit_extended()
-		elif cmd_flag == HANDSHAKE_COMMAND["TERMINATE_CIRCUIT"]:
-			self.terminate_circuit()
-		elif cmd_flag == HANDSHAKE_COMMAND["CIRCUIT_TERMINATED"]:
-			self.circuit_terminated()
+		elif cmd_flag == HANDSHAKE_COMMAND["ESTABLISH_RENDEZVOUS"]:
+			self.establish_rendezvous()
+		elif cmd_flag == HANDSHAKE_COMMAND["RENDEZVOUS_ESTABLISHED"]:
+			self.rendezvous_established()
 		else:
 			logging.error("Unknown type of handshake packet type.")
 
@@ -147,10 +191,13 @@ class RelayRouter():
 		pkt.set_to(dest)
 		pkt.set_seq(self.seq)
 		self.seq += 1
-		self._ack_waited_list[seq] = get_current_time()
+		self._ack_waited_list[self.seq] = get_current_time()
 		global_send(pkt)
 
 	def recv(self, src, pkt):
+		if isinstance(pkt, Packet.ACKPacket):
+			self._ack_buffer.append(pkt)
+			return SUCCESS
 		temp = self._buffer_used + pkt.get_length()
 		if self._buffer_size < temp:
 			logging.info("Router[%x] discard the packet for the buffer is full." % self.id)

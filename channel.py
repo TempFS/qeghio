@@ -58,7 +58,8 @@ class Channel():
 
 	def SendPacket(self, pkg):
 		current_time = get_current_time()
-		print str(current_time) + str(pkg)
+		if 'ACKPacket' not in str(pkg):
+			print str(current_time) + str(pkg)
 		source = RelayRouter.d.get_router_object_by_id(pkg.get_from())
 		destination = RelayRouter.d.get_router_object_by_id(pkg.get_to())
 		delay = self.get_avg_delay(source.region, destination.region)
@@ -91,47 +92,4 @@ ch = Channel()
 def global_send(pkg):  # src is the source object; dst is the destination ip!!!!
 	ch.SendPacket(pkg)
 	
-
-def test():
-
-	p1 = Packet.HandshakePacket(0, str(HANDSHAKE_COMMAND["RELAY_NOTE_FINDED"]) + '1')
-	p1.set_from(2)
-	p1.set_to(3)
-	p2 = Packet.HandshakePacket(0, str(HANDSHAKE_COMMAND["RELAY_NOTE_FINDED"]) + '1')
-	p2.set_from(2)
-	p2.set_to(4)
-	p3 = Packet.HandshakePacket(0, str(HANDSHAKE_COMMAND["RELAY_NOTE_FINDED"]) + '1')
-	p3.set_from(1)
-	p3.set_to(3)
-	p4 = Packet.HandshakePacket(0, str(HANDSHAKE_COMMAND["RELAY_NOTE_FINDED"]) + '1')
-	p4.set_from(4)
-	p4.set_to(3)
-	r1 = RelayRouter.RelayRouter(2,2,200,'A', 1000, 0, ONLINE)
-	r2 = RelayRouter.RelayRouter(3,3,200,'B', 1200, 0, ONLINE)
-	r3 = RelayRouter.RelayRouter(1,1,200,'D', 1200, 0, ONLINE)
-	r4 = RelayRouter.RelayRouter(4,4,200,'C', 1200, 0, ONLINE)
-	RelayRouter.d.update_global_table()
-	ch.load_delay('region_delay.txt')
-	p = [r1,r2,r3,r4]
-	ct = get_current_time()
-	while ct < 3000:
-		ch.handle()
-		for _ in p:
-			_.handle()
-		if ct == 20:
-			ch.SendPacket(p1)
-		if ct == 30:
-			ch.SendPacket(p2)
-		if ct == 53:
-			ch.SendPacket(p3)
-		if ct == 610:
-			ch.SendPacket(p4)
-
-		add_a_timeslice()
-		ct = get_current_time()
-
-if __name__ == '__main__':
-	test()
-
-
 

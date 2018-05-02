@@ -8,6 +8,14 @@ class Packet():
 		self._route_table = []
 		self._fixed_route_table = []
 		self._init_time = 0
+		self._final_receiver = None
+ 
+ 	def set_final_receiver(self, final_receiver):
+ 		self._final_receiver = final_receiver
+
+ 	# This function cannot be called by Relay Routers
+ 	def get_final_receiver(self):
+ 		return self._final_receiver
 
 	def set_fixed_route_table(self, table):
 		self._fixed_route_table = table
@@ -28,7 +36,9 @@ class Packet():
 		else:
 			tmp = self._route_table[0]
 			del self._route_table[0]
-			return tmp
+			if len(self._route_table) == 0:
+				return 0
+			return self._route_table[0]
 
 	def set_length(self, length):
 		self._length = length
@@ -81,9 +91,18 @@ class HandshakePacket(Packet):
 		self._circuit_id = circuit_id
 		self._payload = payload
 		self.set_length(512)
+		self.note_table = []
+	def set_note_table(self, n_t):
+		self.note_table = n_t
+
+	def get_note_table(self):
+		return self.note_table
 
 	def get_payload(self):
 		return self._payload
+
+	def get_circuit_id(self):
+		return self._circuit_id
 
 
 class Payload():
