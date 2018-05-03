@@ -2,6 +2,7 @@ import Packet
 from const import *
 from channel import global_send, current_time
 import client
+import copy
 new_online_router = []
 new_offline_router = []
 
@@ -60,7 +61,9 @@ class RelayRouter():
 		self._rend_establishing_table = {}
 		self._rend_established_table = {}      #{circuit_id : circuit_id}
 		self.online()
- 
+ 		self.resend_max_interval = 500
+		self.resend_max_times = 3
+
 	def online(self):
 		self.status = ONLINE
 		new_online_router.append(self)
@@ -76,7 +79,7 @@ class RelayRouter():
 	def find_a_relay_note(self):
 		c_id = self.current_handle.get_circuit_id()
 		reply = Packet.HandshakePacket(c_id, str(HANDSHAKE_COMMAND["RELAY_NOTE_FINDED"]) + str(self.id))
-		route_table = self.current_handle.get_fixed_route_table()
+		route_table = copy.deepcopy(self.current_handle.get_fixed_route_table())
 		route_table.reverse()
 		reply.set_fixed_route_table(route_table)
 		self.send(self.current_handle.get_from(), reply)
@@ -87,7 +90,8 @@ class RelayRouter():
 
 	def extend_circuit(self):
 		reply = Packet.HandshakePacket(0, str(HANDSHAKE_COMMAND["CIRCUIT_EXTENDED"]) + str(self.id))
-		return_route_table = self.current_handle.get_fixed_route_table().reverse()
+		return_route_table = copy.deepcopy(self.current_handle.get_fixed_route_table())
+		return_route_table.reverse()
 		reply.set_fixed_route_table(return_route_table)
 		self.send(self.current_handle.get_from(), reply)
 		pass
@@ -122,7 +126,8 @@ class RelayRouter():
 
 
 		reply = Packet.HandshakePacket(rend_id, str(HANDSHAKE_COMMAND["RENDEZVOUS_ESTABLISHED"]) + str(flag) + str(current_circuit_id))
-		route_table = self.current_handle.get_fixed_route_table()
+		route_table = copy.deepcopy(self.current_handle.get_fixed_route_table())
+
 		route_table.reverse()
 		cirobj = client.Circuit(current_circuit_id, route_table, None, None)
 		self._circuit_map[current_circuit_id] = cirobj
@@ -165,7 +170,18 @@ class RelayRouter():
 		if next_rp != 0:
 			self.send(next_rp, pkt)
 			return
-		logging.error("A payload packet terminate in the middle of onion router.")
+		p_id = pkt.get_packet_id().split(':')
+		c_id = p_id[0]+':'+p_id[1]
+
+		s_id = self._rend_established_table[c_id]
+		if s_id not in self._circuit_map:
+			logging.error('An unkown circuit. s_id:[%s] self.id:[%d]' %(s_id, self.id))
+		route_table = self._circuit_map[s_id].get_route_table()
+
+		#logging.error("A payload packet terminate in the middle of onion router.")
+		pkt.set_fixed_route_table(route_table)
+		self.send(route_table[1], pkt)
+
 
 
 	def parse_ack_packet(self):
@@ -173,11 +189,28 @@ class RelayRouter():
 		seq = self.current_handle.get_seq()
 		src = self.current_handle.get_from()
 		if seq in self._ack_waited_list:
-			tmp = self._ack_waited_list[seq]
+			tmp = self._ack_waited_list[seq][0]
 			self._fastnote_table[src] = current_time - tmp
 			del self._ack_waited_list[seq]
 		else:
-			logging.error("Cannot find related packet record. seq:[%d]." %seq)
+			logging.error("Cannot find related packet record. seq:[%d] from:[%d]." %(seq, src))
+
+	def resend_process(self, current_time):
+		ack_count = len(self._ack_waited_list)
+		if ack_count == 0:
+			return
+		for index in self._ack_waited_list:
+			_ = self._ack_waited_list[index]
+			if current_time - _[0] > self.resend_max_interval:
+				if _[2] > self.resend_max_times:
+					logging.info('[%d} packet drop for exceed the maximum resend times.' % self.id)
+					del self._ack_waited_list[index]
+				else:
+					global_send(_[1])
+					_[0] = current_time
+					_[2] += 1
+
+
 
 	def send_ack_pkt(self, pkt):
 		seq = pkt.get_seq()
@@ -190,9 +223,10 @@ class RelayRouter():
 		pkt.set_from(self.ip)
 		pkt.set_to(dest)
 		pkt.set_seq(self.seq)
+		self._ack_waited_list[self.seq] = [get_current_time(), pkt, 0]
 		self.seq += 1
-		self._ack_waited_list[self.seq] = get_current_time()
 		global_send(pkt)
+
 
 	def recv(self, src, pkt):
 		if isinstance(pkt, Packet.ACKPacket):
@@ -209,9 +243,11 @@ class RelayRouter():
 
 	def handle(self):
 		current_time = get_current_time()
+		self.resend_process(current_time)
 		for _ in self._ack_buffer:
 			self.current_handle = _
 			self.parse_ack_packet()
+		self._ack_buffer = []
 		if self._buffer_used == 0:
 			return 
 		if current_time < self._next_trans_time:
@@ -229,6 +265,7 @@ class RelayRouter():
 			self.parse_handshake_packet()
 		else:
 			logging.info("Unknown packet type.")
+
 
 
 

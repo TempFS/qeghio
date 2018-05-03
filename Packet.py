@@ -1,4 +1,5 @@
 from const import *
+import copy
 class Packet():
 	def __init__(self):
 		self._length = 0
@@ -22,7 +23,7 @@ class Packet():
 		self._route_table = table[1:]
 
 	def get_fixed_route_table(self):
-		return self._fixed_route_table
+		return copy.deepcopy(self._fixed_route_table)
 
 	def set_init_time(self, init_time):
 		self._init_time = init_time
@@ -57,20 +58,29 @@ class Packet():
 	def get_to(self):
 		return self._to
 	def __str__(self):
-		return "seq:[%x], from:[%x], to:[%x]" % (self._seq, self._from, self._to)
+		return "seq:[%d], from:[%d], to:[%d]" % (self._seq, self._from, self._to)
 
 
 
 
 class PayloadPacket(Packet):
-	def __init__(self, packet_id, packet_sequence):
+	def __init__(self, packet_id, packet_sequence, packet_total):
 		Packet.__init__(self)
 		self._packet_id = packet_id
 		self._packet_sequence = packet_sequence
+		self._packet_total = packet_total
 		self.set_length(TOR_PACKET_LENGTH)
 
+	def get_packet_id(self):
+		return self._packet_id
+
+	def get_packet_sequence(self):
+		return self._packet_sequence
+
+	def get_packet_total(self):
+		return self._packet_total
 	def __str__(self):
-		return "[PayloadPacket] packet_id:[%d], packet_sequence:[%d] " %(self._packet_id, self._packet_sequence) + Packet.__str__(self)
+		return "[PayloadPacket] packet_id:[%s], packet_sequence:[%d] " %(self._packet_id, self._packet_sequence) + Packet.__str__(self)
 
 
 

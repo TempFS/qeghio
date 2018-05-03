@@ -46,14 +46,15 @@ def test_client():
 	channel.ch.load_delay('region_delay.txt')
 	#p = [r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12]
 	ct = get_current_time()
-	while ct < 3000:
+	while ct < 30000:
 		channel.ch.handle()
 		for _ in p:
 			_.handle()
 		c1.handle()
 		c2.handle()
 		if ct == 20:
-			c1.send_to_server(100, 10001)
+			c1.send_to_server(1500, 10001)
+			#c2.send_to_server(5000, 10000)
 
 		add_a_timeslice()
 		ct = get_current_time()

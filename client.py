@@ -2,6 +2,7 @@ from channel import global_send, current_time
 import random
 import Packet
 import RelayRouter
+import copy
 from const import *
 global_entry_node = []  #store the id of entry node (the first node).
 
@@ -20,6 +21,8 @@ class Circuit():
 	def set_route_table(self, r_t):
 		self.route_table = r_t
 		#self.n = len(self.route_table)
+	def get_route_table(self):
+		return copy.deepcopy(self.route_table)
 
 
 class Client():
@@ -52,6 +55,11 @@ class Client():
 		self._relay_node_table = []
 		self.refresh_relay_node_table()
 
+		self._packet_id = 0
+		self._recv_buffer = {}    #{payload_packet_id : [packet1, packet2, packet3, ... ]
+
+		self.resend_max_interval = 500
+		self.resend_max_times = 3
 	def refresh_relay_node_table(self):
 		g_t = RelayRouter.d.get_global_table()
 		for _ in g_t:
@@ -94,7 +102,7 @@ class Client():
 
 	def recv_rand_inform_packet(self, client_id, rend_node_id, circuit_id):
 		current_id = circuit_id.split(':')[0] + ':' + str(client_id)
-		self.new_a_circuit(current_id, rend_node_id, 3)
+		self.new_a_circuit(current_id, rend_node_id, 2)
 
 
  	#status True: First step to create a circuit_id
@@ -103,12 +111,13 @@ class Client():
 		if len(self._entrynode) == 0:
 			logging.error('Client has no known entry node')
 			return -1
-		
+
 		relay_note = []
 		relay_note.append(self.id)
 		entry_node = self.get_entry_node()
 		relay_note.append(entry_node)
 		new_circuit = Circuit(current_id, relay_note, target_router_id, n)
+		self._circuit_map[current_id] = new_circuit
 		self._establishing_circuit[current_id] = new_circuit
 
 		self.send_find_a_relay_note_packet(relay_note, current_id)
@@ -119,6 +128,7 @@ class Client():
 		finished_n = len(router_table) - 1   # established relay notes
 		if finished_n == current_circuit.n:
 			# send to the destination
+
 			router_table.reverse()
 			router_table.append(current_circuit.dest)
 			self.send_a_establish_rendezvous_packet(router_table, current_circuit.id)
@@ -132,16 +142,19 @@ class Client():
 			router_table.reverse()
 			router_table.append(next_relay_id.id)
 			self.send_find_a_relay_note_packet(router_table, current_circuit.id)
+
 		
 	def rendezvous_established(self):
 		payload = self.current_handle.get_payload()
 		flag = int(payload[1])
 		circuit_id = self.current_handle.get_circuit_id()
 		server_id = int(circuit_id.split(':')[1])
+		route_table = self.current_handle.get_fixed_route_table()
+		route_table.reverse()
 		if flag == 1:
-			self._rend_circuit[server_id] = circuit_id
+			self._rend_circuit[circuit_id] = route_table
+			print server_id, circuit_id, route_table
 			print 'rend ok.'
-			print self.current_handle.get_fixed_route_table()
 
 
 
@@ -168,7 +181,8 @@ class Client():
 		if dest == self.current_handle.get_fixed_route_table()[-1]:
 			# a circuit has successfully established.
 			del self._establishing_circuit[circuit_id]
-			router_table = self.current_handle.get_fixed_route_table().reverse()
+			router_table = copy.deepcopy(self.current_handle.get_fixed_route_table())
+			router_table.reverse()
 			current_circuit.set_route_table(router_table)
 			self._established_circuit[dest] = current_circuit
 			#self.send_payload(dest) #TODO:
@@ -178,9 +192,48 @@ class Client():
 			# a circuit needs to be further extended.
 			self.extend_a_circuit(current_circuit)
 
-		
-	def send_payload(self, dest):
-		print 'established success %d' %dest
+
+	def gen_payload(self,circuit_id, route_table, length):
+		if length == 0:
+			return []
+		packet_buffer = []
+		p_id = self._packet_id
+		p_id = circuit_id + ':' + str(p_id)
+		p_seq = 0
+		self._packet_id += 1
+		packet_count = int(length / 512) + 1
+		for i in range(packet_count):
+			pl_packet = Packet.PayloadPacket(p_id, p_seq, packet_count)
+			p_seq += 1
+			pl_packet.set_fixed_route_table(route_table)
+			packet_buffer.append(pl_packet)
+		return packet_buffer
+
+
+	def send_payload(self):
+		for circuit_id in self._rend_circuit:
+			if circuit_id in self._send_content:
+				length = self._send_content[circuit_id]
+				if length == 0:
+					continue
+				route_table = self._rend_circuit[circuit_id]
+				packet_buffer = self.gen_payload(circuit_id, route_table, length)
+				for _ in packet_buffer:
+					self.send(route_table[1], _)
+				self._send_content[circuit_id] = 0
+
+	def parse_payload_packet(self):
+		packet_id = self.current_handle.get_packet_id()
+		packet_seq = self.current_handle.get_packet_sequence()
+		packet_total = self.current_handle.get_packet_total()
+		if packet_id in self._recv_buffer:
+			self._recv_buffer[packet_id].append(packet_seq)
+
+		else:
+			self._recv_buffer[packet_id] = [packet_seq]
+		if len(self._recv_buffer[packet_id]) == packet_total:
+			print 'payload receives successfully.'
+
 
 
 
@@ -190,7 +243,7 @@ class Client():
 		current_id = random.randint(0, pow(2, 32) - 1)
 		current_id = str(current_id) + ':' + str(server_id)
 		temp = self._current_circuit_count
-		self._circuit_map[temp] = current_id
+
 		self._current_circuit_count += 1
 		rend_node_id = self.get_a_rend_node()
 		print 'chosen rend: %d' % rend_node_id.id
@@ -199,23 +252,41 @@ class Client():
 		self.send_rend_inform_packet(server_id, rend_node_id.id, current_id)
 
 		# step3: new a circuit to the rend point.
-		self.new_a_circuit(current_id, rend_node_id.id, 3)
+		self.new_a_circuit(current_id, rend_node_id.id, 2)
 
 		# step4: wait the circuit established successfully and send the actual payload
 		self._send_content[current_id] = length
 		print 'send_to_server over'
 
+	def resend_process(self, current_time):
+		ack_count = len(self._ack_waited_list)
+		if ack_count == 0:
+			return
+		for index in self._ack_waited_list:
+			_ = self._ack_waited_list[index]
+			if current_time - _[0] > self.resend_max_interval:
+				if _[2] > self.resend_max_times:
+					logging.info('[%d} packet drop for exceed the maximum resend times.' % self.id)
+					del self._ack_waited_list[index]
+				else:
+					global_send(_[1])
+					_[0] = current_time
+					_[2] += 1
 
 	def send(self, dest, pkt):  #dest is the ip of receiver point 
 		pkt.set_from(self.id)
 		pkt.set_to(dest)
 		pkt.set_seq(self.seq)
+		self._ack_waited_list[self.seq] = [get_current_time(), pkt, 0]
 		self.seq += 1
-		self._ack_waited_list[self.seq] = get_current_time()
 		global_send(pkt)
 
 
 	def recv(self, src, pkt):
+		if isinstance(pkt, Packet.ACKPacket):
+			self._ack_buffer.append(pkt)
+			return SUCCESS
+
 		# Assume that client's buffer will not be full.
 		self._buffer_used += pkt.get_length()
 		self._buffer.append(pkt)
@@ -226,8 +297,6 @@ class Client():
 		seq = self.current_handle.get_seq()
 		src = self.current_handle.get_from()
 		if seq in self._ack_waited_list:
-			tmp = self._ack_waited_list[seq]
-			self._fastnote_table[src] = current_time - tmp
 			del self._ack_waited_list[seq]
 		else:
 			logging.error("Cannot find related packet record. seq:[%d]." %seq)
@@ -240,9 +309,11 @@ class Client():
 
 	def handle(self):
 		current_time = get_current_time()
+		self.resend_process(current_time)
 		for _ in self._ack_buffer:
 			self.current_handle = _
 			self.parse_ack_packet()
+		self._ack_buffer = []
 		if self._buffer_used == 0:
 			return 
 		if current_time < self._next_trans_time:
@@ -260,5 +331,6 @@ class Client():
 			self.parse_handshake_packet()
 		else:
 			logging.info("Unknown packet type.")
+		self.send_payload()
 
 
