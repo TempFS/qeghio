@@ -1,4 +1,4 @@
-from channel import global_send, current_time
+from channel import global_send, current_time, global_resend
 import random
 import Packet
 import RelayRouter
@@ -58,14 +58,16 @@ class Client():
 		self._packet_id = 0
 		self._recv_buffer = {}    #{payload_packet_id : [packet1, packet2, packet3, ... ]
 
-		self.resend_max_interval = 500
+		self.resend_max_interval = 50000
 		self.resend_max_times = 3
+
+		self.discard_buffer = []
+
 	def refresh_relay_node_table(self):
 		g_t = RelayRouter.d.get_global_table()
 		for _ in g_t:
 			self._relay_node_table.append(g_t[_])
 		random.shuffle(self._relay_node_table)
-
 
 
 	def refresh_entry_node_table(self):
@@ -135,7 +137,6 @@ class Client():
 		else:
 			# continue find a relay router to extend the circuit
 			note_table = self.current_handle.get_note_table()
-			print router_table
 			next_relay_id = self.get_relay_node(note_table)
 			while next_relay_id.id in router_table or next_relay_id.id == current_circuit.dest:
 				next_relay_id = self.get_relay_node(note_table)
@@ -153,8 +154,8 @@ class Client():
 		route_table.reverse()
 		if flag == 1:
 			self._rend_circuit[circuit_id] = route_table
-			print server_id, circuit_id, route_table
-			print 'rend ok.'
+			#print server_id, circuit_id, route_table
+			#print 'rend ok.'
 
 
 
@@ -219,6 +220,7 @@ class Client():
 				route_table = self._rend_circuit[circuit_id]
 				packet_buffer = self.gen_payload(circuit_id, route_table, length)
 				for _ in packet_buffer:
+					#_.set_init_time(get_current_time())
 					self.send(route_table[1], _)
 				self._send_content[circuit_id] = 0
 
@@ -232,6 +234,10 @@ class Client():
 		else:
 			self._recv_buffer[packet_id] = [packet_seq]
 		if len(self._recv_buffer[packet_id]) == packet_total:
+			time_cost = get_current_time() - self.current_handle.get_init_time()
+			fp = open('success_log.txt', 'a')
+			fp.write('id:[%d], time_cost:[%d], payload_size:[%d]\n' %(self.id, time_cost, packet_total*512))
+			fp.close()
 			print 'payload receives successfully.'
 
 
@@ -246,7 +252,6 @@ class Client():
 
 		self._current_circuit_count += 1
 		rend_node_id = self.get_a_rend_node()
-		print 'chosen rend: %d' % rend_node_id.id
 
 		# step2: inform the server the identification and rend point.
 		self.send_rend_inform_packet(server_id, rend_node_id.id, current_id)
@@ -256,22 +261,25 @@ class Client():
 
 		# step4: wait the circuit established successfully and send the actual payload
 		self._send_content[current_id] = length
-		print 'send_to_server over'
 
 	def resend_process(self, current_time):
 		ack_count = len(self._ack_waited_list)
 		if ack_count == 0:
 			return
+		drop_buffer = []
 		for index in self._ack_waited_list:
 			_ = self._ack_waited_list[index]
 			if current_time - _[0] > self.resend_max_interval:
 				if _[2] > self.resend_max_times:
-					logging.info('[%d} packet drop for exceed the maximum resend times.' % self.id)
-					del self._ack_waited_list[index]
+					logging.info('[%d] packet drop for exceed the maximum resend times.' % self.id)
+					drop_buffer.append(index)
 				else:
-					global_send(_[1])
+					logging.info('[%d] packet resend.' % self.id)
+					global_resend(_[1])
 					_[0] = current_time
 					_[2] += 1
+		for _ in drop_buffer:
+			del self._ack_waited_list[_]
 
 	def send(self, dest, pkt):  #dest is the ip of receiver point 
 		pkt.set_from(self.id)
@@ -286,6 +294,14 @@ class Client():
 		if isinstance(pkt, Packet.ACKPacket):
 			self._ack_buffer.append(pkt)
 			return SUCCESS
+		if pkt.resend_flag == True:
+			resend_mode = False
+			for _ in self.discard_buffer:
+				if _[0] == pkt._from and _[1] == pkt._seq:
+					self.discard_buffer.remove(_)
+					resend_mode = True
+			if resend_mode == False:
+				return SUCCESS
 
 		# Assume that client's buffer will not be full.
 		self._buffer_used += pkt.get_length()
@@ -299,7 +315,7 @@ class Client():
 		if seq in self._ack_waited_list:
 			del self._ack_waited_list[seq]
 		else:
-			logging.error("Cannot find related packet record. seq:[%d]." %seq)
+			logging.error("[%d]Cannot find related packet record. seq:[%d]." %(self.id,seq))
 
 	def send_ack_pkt(self, pkt):
 		seq = pkt.get_seq()

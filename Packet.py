@@ -10,7 +10,11 @@ class Packet():
 		self._fixed_route_table = []
 		self._init_time = 0
 		self._final_receiver = None
- 
+		self.resend_flag = False
+
+ 	def set_resend_flag(self):
+		self.resend_flag = True
+
  	def set_final_receiver(self, final_receiver):
  		self._final_receiver = final_receiver
 

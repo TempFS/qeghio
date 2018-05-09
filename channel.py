@@ -29,6 +29,8 @@ class Channel():
 				if x not in self.delay_table:
 					self.delay_table[x] = {}
 					self.delay_table[x][x] = local_delay
+				if _elm[2] == 'No':
+					_elm[2] = 100
 				self.delay_table[x][y] = float(_elm[2])
 				if y not in self.delay_table:
 					self.delay_table[y] = {}
@@ -59,7 +61,8 @@ class Channel():
 	def SendPacket(self, pkg):
 		current_time = get_current_time()
 		if 'ACKPacket' not in str(pkg):
-			print str(current_time) + str(pkg)
+			pass
+			#print str(current_time) + str(pkg)
 		source = RelayRouter.d.get_router_object_by_id(pkg.get_from())
 		destination = RelayRouter.d.get_router_object_by_id(pkg.get_to())
 		delay = self.get_avg_delay(source.region, destination.region)
@@ -90,6 +93,9 @@ class Channel():
 
 ch = Channel()
 def global_send(pkg):  # src is the source object; dst is the destination ip!!!!
+	pkg.resend_flag = False
 	ch.SendPacket(pkg)
 	
-
+def global_resend(pkg):
+	pkg.resend_flag = True
+	ch.SendPacket(pkg)

@@ -1,6 +1,6 @@
 import Packet
 from const import *
-from channel import global_send, current_time
+from channel import global_send, current_time, global_resend
 import client
 import copy
 new_online_router = []
@@ -61,9 +61,9 @@ class RelayRouter():
 		self._rend_establishing_table = {}
 		self._rend_established_table = {}      #{circuit_id : circuit_id}
 		self.online()
- 		self.resend_max_interval = 500
-		self.resend_max_times = 3
-
+ 		self.resend_max_interval = 50000
+		self.resend_max_times = 10
+		self.discard_buffer = []
 	def online(self):
 		self.status = ONLINE
 		new_online_router.append(self)
@@ -86,7 +86,7 @@ class RelayRouter():
 
 	def relay_note_finded(self):
 		# The Router cannot achieve this kind of handshake payload packet.
-		logging.error("Router receives a RELAY_NOTE_FINDED packet.")
+		logging.error("[%d]Router receives a RELAY_NOTE_FINDED packet."%self.id)
 
 	def extend_circuit(self):
 		reply = Packet.HandshakePacket(0, str(HANDSHAKE_COMMAND["CIRCUIT_EXTENDED"]) + str(self.id))
@@ -193,22 +193,28 @@ class RelayRouter():
 			self._fastnote_table[src] = current_time - tmp
 			del self._ack_waited_list[seq]
 		else:
-			logging.error("Cannot find related packet record. seq:[%d] from:[%d]." %(seq, src))
+			logging.error("[%d]Cannot find related packet record. seq:[%d] from:[%d]." %(self.id,seq, src))
 
 	def resend_process(self, current_time):
 		ack_count = len(self._ack_waited_list)
 		if ack_count == 0:
 			return
+		drop_buffer = []
 		for index in self._ack_waited_list:
 			_ = self._ack_waited_list[index]
 			if current_time - _[0] > self.resend_max_interval:
 				if _[2] > self.resend_max_times:
-					logging.info('[%d} packet drop for exceed the maximum resend times.' % self.id)
-					del self._ack_waited_list[index]
+					logging.info('[%d] packet drop for exceed the maximum resend times.' % self.id)
+					drop_buffer.append(index)
+
 				else:
-					global_send(_[1])
+					_[1].set_resend_flag()
+					logging.info('[%d] packet resend.' % self.id)
+					global_resend(_[1])
 					_[0] = current_time
 					_[2] += 1
+		for index in drop_buffer:
+			del self._ack_waited_list[index]
 
 
 
@@ -235,7 +241,19 @@ class RelayRouter():
 		temp = self._buffer_used + pkt.get_length()
 		if self._buffer_size < temp:
 			logging.info("Router[%x] discard the packet for the buffer is full." % self.id)
+			pkt_info = [pkt._from, pkt._seq]
+			self.discard_buffer.append(pkt_info)
+
 			return FAILURE
+		if pkt.resend_flag == True:
+			resend_mode = False
+			for _ in self.discard_buffer:
+				if _[0] == pkt._from and _[1] == pkt._seq:
+					self.discard_buffer.remove(_)
+					resend_mode = True
+			if resend_mode == False:
+				return SUCCESS
+
 		self._buffer_used = temp
 		self._buffer.append(pkt)
 		return SUCCESS
