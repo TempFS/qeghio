@@ -3,6 +3,7 @@ from const import *
 from channel import global_send, current_time, global_resend
 import client
 import copy
+import operator
 new_online_router = []
 new_offline_router = []
 
@@ -64,6 +65,7 @@ class RelayRouter():
  		self.resend_max_interval = 50000
 		self.resend_max_times = 10
 		self.discard_buffer = []
+
 	def online(self):
 		self.status = ONLINE
 		new_online_router.append(self)
@@ -82,6 +84,10 @@ class RelayRouter():
 		route_table = copy.deepcopy(self.current_handle.get_fixed_route_table())
 		route_table.reverse()
 		reply.set_fixed_route_table(route_table)
+
+		sorted_x = sorted(self._fastnote_table.items(), key=operator.itemgetter(1))
+		reply.set_fast_note_table(sorted_x[:50])
+
 		self.send(self.current_handle.get_from(), reply)
 
 	def relay_note_finded(self):
@@ -190,7 +196,8 @@ class RelayRouter():
 		src = self.current_handle.get_from()
 		if seq in self._ack_waited_list:
 			tmp = self._ack_waited_list[seq][0]
-			self._fastnote_table[src] = current_time - tmp
+			if src < 10000:
+				self._fastnote_table[src] = current_time + self.current_handle.time_require - tmp
 			del self._ack_waited_list[seq]
 		else:
 			logging.error("[%d]Cannot find related packet record. seq:[%d] from:[%d]." %(self.id,seq, src))
@@ -219,9 +226,11 @@ class RelayRouter():
 
 
 	def send_ack_pkt(self, pkt):
+		time_needed = self._buffer_used / self._bandwidth
 		seq = pkt.get_seq()
 		recv = pkt.get_from()
 		reply = Packet.ACKPacket(seq, self.id, recv)
+		reply.time_require = time_needed
 		global_send(reply)
 
 	def send(self, dest, pkt):  #dest is the ip of receiver point 
@@ -267,22 +276,26 @@ class RelayRouter():
 			self.parse_ack_packet()
 		self._ack_buffer = []
 		if self._buffer_used == 0:
-			return 
-		if current_time < self._next_trans_time:
 			return
-		self.current_handle = self._buffer[0]
-		self._buffer.remove(self.current_handle)
-		self._buffer_used -= self.current_handle.get_length()
-		self.send_ack_pkt(self.current_handle)
-		if self._buffer:
-			self._next_trans_time = current_time + 1.0 * self._buffer[0].get_length() / (1024 * self._bandwidth)
+		tmp = current_time
+		while (current_time >= self._next_trans_time):
+			self.current_handle = self._buffer[0]
+			self._buffer.remove(self.current_handle)
+			self._buffer_used -= self.current_handle.get_length()
+			self.send_ack_pkt(self.current_handle)
 
-		if isinstance(self.current_handle, Packet.PayloadPacket):
-			self.parse_payload_packet()
-		elif isinstance(self.current_handle, Packet.HandshakePacket):
-			self.parse_handshake_packet()
-		else:
-			logging.info("Unknown packet type.")
+			if isinstance(self.current_handle, Packet.PayloadPacket):
+				self.parse_payload_packet()
+			elif isinstance(self.current_handle, Packet.HandshakePacket):
+				self.parse_handshake_packet()
+			else:
+				logging.info("Unknown packet type.")
+			if self._buffer:
+				self._next_trans_time = tmp + 1024.0 * self._buffer[0].get_length() / (self._bandwidth)
+				tmp = self._next_trans_time
+			else:
+				break
+
 
 
 

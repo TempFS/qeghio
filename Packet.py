@@ -95,6 +95,7 @@ class ACKPacket(Packet):
 		self.set_from(fr)
 		self.set_to(to)
 		self.set_length(10)
+		self.time_require = 0
 	def __str__(self):
 		return "[ACKPacket] "+ Packet.__str__(self) 
 
@@ -106,11 +107,18 @@ class HandshakePacket(Packet):
 		self._payload = payload
 		self.set_length(512)
 		self.note_table = []
+		self.fast_note = []
 	def set_note_table(self, n_t):
-		self.note_table = n_t
+		self.note_table = copy.deepcopy(n_t)
+
+	def set_fast_note_table(self, f_n_t):
+		self.fast_note = copy.deepcopy(f_n_t)
 
 	def get_note_table(self):
-		return self.note_table
+		return copy.deepcopy(self.note_table)
+
+	def get_fast_note_table(self):
+		return copy.deepcopy(self.fast_note)
 
 	def get_payload(self):
 		return self._payload

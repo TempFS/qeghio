@@ -8,7 +8,7 @@ import random
 from const import *
 local_delay = 5
 client_count = 5000
-p = 0.3
+p = 0.1
 def load_region_distribution():
     region_distribution = {}
     fp = open('region_distribution.txt', 'r')
@@ -34,7 +34,7 @@ def random_send_packet(c):
     receiver = random.choice(c)
     while receiver == sender:
         receiver = random.choice(c)
-    sender.send_to_server(random.randint(100, 10000000), receiver.id)
+    sender.send_to_server(50*1024, receiver.id)
 
 def main():
     region_distribution = load_region_distribution()
@@ -45,15 +45,15 @@ def main():
     for region in region_distribution:
         j = 0
         region_table.append(region)
-        if j < region_distribution[region]:
-            p.append(RelayRouter.RelayRouter(i, 2*1024*1024, region, 200*1024*1024, 0, ONLINE))
+        while j < region_distribution[region]:
+            p.append(RelayRouter.RelayRouter(i, random.randint(2*1024*1024, 20*1024*1024), region, 200*1024*1024, 0, ONLINE))
             i+=1
             j+=1
     RelayRouter.d.update_global_table()
     total_delay = i
     c = []
     for i in range(client_count):
-        tmp = client.Client(10000+i, 2000000,random.choice(region_table), 0)
+        tmp = client.Client(10000+i, 2000000,random.choice(region_table), 0.1)
         tmp._entrynode = []
         rnd = random.randint(1,total_delay-4)
         tmp._entrynode.append(rnd)
@@ -61,11 +61,7 @@ def main():
         tmp._entrynode.append(rnd + 2)
         c.append(tmp)
 
-    c1 = client.Client(10000, 2000000, 'Hong_Kong', 0)
-    c2 = client.Client(10001, 2000000, 'Germany', 0)
     RelayRouter.d.update_global_table()
-    c1._entrynode = [1, 4, 5, 6]
-    c2._entrynode = [2, 3]
     ct = get_current_time()
     while ct < 300000:
         print ct

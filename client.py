@@ -9,7 +9,8 @@ global_entry_node = []  #store the id of entry node (the first node).
 
 def fs(s):
 	x = random.random()
-	return 1.0 * (pow(2, s*x) - 1) / (pow(2,x) - 1)
+	rst =  1.0 * (pow(2, s*x) - 1) / (pow(2,x) - 1)
+	return 0
 
 class Circuit():
 	def __init__(self, id, route_table, dest, n):
@@ -32,7 +33,7 @@ class Client():
 		self._bandwidth = bandwidth
 		self.region = location
 		self._entrynode = []
-		self.s = s
+		self.s = 1.0
 		self._route_time = 3  #luyou cishu, default:3
 		self._probability = 1.0   #probability to choose a random router point
 
@@ -75,14 +76,21 @@ class Client():
 
 	def get_entry_node(self):
 		index = int(fs(self.s) * len(self._entrynode))
-		return self._entrynode[index]
+		return self._entrynode[0]
 
 	def get_relay_node(self, relay_node_table):
 		if len(relay_node_table) <= 5:
 			relay_node_table = self._relay_node_table
-		#index = int(fs(self.s) * len(relay_node_table))
-		index = random.randint(0, len(relay_node_table)-1)
-		return relay_node_table[index]
+			#index = int(fs(self.s) * len(relay_node_table))
+			#print index
+			index = random.randint(0, len(relay_node_table)-1)
+			return relay_node_table[index].id
+		else:
+			#index = int(fs(self.s) * len(relay_node_table))
+			#print 'index=%d' %index
+			index = random.randint(0, 5)
+			return relay_node_table[index][0]
+
 
 	def get_a_rend_node(self):
 		return random.choice(self._relay_node_table)
@@ -104,7 +112,7 @@ class Client():
 
 	def recv_rand_inform_packet(self, client_id, rend_node_id, circuit_id):
 		current_id = circuit_id.split(':')[0] + ':' + str(client_id)
-		self.new_a_circuit(current_id, rend_node_id, 2)
+		self.new_a_circuit(current_id, rend_node_id, 4)
 
 
  	#status True: First step to create a circuit_id
@@ -125,7 +133,7 @@ class Client():
 		self.send_find_a_relay_note_packet(relay_note, current_id)
 
 
-	def extend_a_circuit(self, current_circuit):
+	def extend_a_circuit(self, current_circuit, note_table):
 		router_table = self.current_handle.get_fixed_route_table()
 		finished_n = len(router_table) - 1   # established relay notes
 		if finished_n == current_circuit.n:
@@ -136,12 +144,12 @@ class Client():
 			self.send_a_establish_rendezvous_packet(router_table, current_circuit.id)
 		else:
 			# continue find a relay router to extend the circuit
-			note_table = self.current_handle.get_note_table()
+			#note_table = self.current_handle.get_note_table()
 			next_relay_id = self.get_relay_node(note_table)
-			while next_relay_id.id in router_table or next_relay_id.id == current_circuit.dest:
+			while next_relay_id in router_table or next_relay_id == current_circuit.dest:
 				next_relay_id = self.get_relay_node(note_table)
 			router_table.reverse()
-			router_table.append(next_relay_id.id)
+			router_table.append(next_relay_id)
 			self.send_find_a_relay_note_packet(router_table, current_circuit.id)
 
 		
@@ -166,14 +174,14 @@ class Client():
 			self.relay_note_finded()
 		elif cmd_flag == HANDSHAKE_COMMAND["RENDEZVOUS_ESTABLISHED"]:
 			self.rendezvous_established()
-		elif cmd_flag == HANDSHAKE_COMMAND["CIRCUIT_TERMINATED"]:
-			pass
 		else:
-			logging.error("Unknown type of handshake packet type.")
+			logging.error("Unknown type of handshake packet type. [%d]" %cmd_flag)
 
 
 	def relay_note_finded(self):
 		circuit_id = self.current_handle.get_circuit_id()
+		fast_table = self.current_handle.get_fast_note_table()
+
 		if circuit_id not in self._establishing_circuit:
 			logging.error('Client received an unknown packet.')
 			return -1
@@ -191,7 +199,7 @@ class Client():
 
 		else:
 			# a circuit needs to be further extended.
-			self.extend_a_circuit(current_circuit)
+			self.extend_a_circuit(current_circuit, fast_table)
 
 
 	def gen_payload(self,circuit_id, route_table, length):
@@ -220,7 +228,7 @@ class Client():
 				route_table = self._rend_circuit[circuit_id]
 				packet_buffer = self.gen_payload(circuit_id, route_table, length)
 				for _ in packet_buffer:
-					#_.set_init_time(get_current_time())
+					_.set_init_time(get_current_time())
 					self.send(route_table[1], _)
 				self._send_content[circuit_id] = 0
 
@@ -236,7 +244,7 @@ class Client():
 		if len(self._recv_buffer[packet_id]) == packet_total:
 			time_cost = get_current_time() - self.current_handle.get_init_time()
 			fp = open('success_log.txt', 'a')
-			fp.write('id:[%d], time_cost:[%d], payload_size:[%d]\n' %(self.id, time_cost, packet_total*512))
+			fp.write('id:[%d], time_cost:[%d], payload_size:[%d], speed:[%f]\n' %(self.id, time_cost, packet_total*512, (packet_total*512.0)/time_cost))
 			fp.close()
 			print 'payload receives successfully.'
 
