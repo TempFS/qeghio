@@ -79,7 +79,7 @@ class Client():
 		return self._entrynode[0]
 
 	def get_relay_node(self, relay_node_table):
-		if len(relay_node_table) <= 5:
+		if len(relay_node_table) <= 10 or random.random() < 0.2:
 			relay_node_table = self._relay_node_table
 			#index = int(fs(self.s) * len(relay_node_table))
 			#print index
@@ -88,6 +88,7 @@ class Client():
 		else:
 			#index = int(fs(self.s) * len(relay_node_table))
 			#print 'index=%d' %index
+			print 'Find a close node.'
 			index = random.randint(0, 5)
 			return relay_node_table[index][0]
 
@@ -243,9 +244,10 @@ class Client():
 			self._recv_buffer[packet_id] = [packet_seq]
 		if len(self._recv_buffer[packet_id]) == packet_total:
 			time_cost = get_current_time() - self.current_handle.get_init_time()
-			fp = open('success_log.txt', 'a')
-			fp.write('id:[%d], time_cost:[%d], payload_size:[%d], speed:[%f]\n' %(self.id, time_cost, packet_total*512, (packet_total*512.0)/time_cost))
-			fp.close()
+			if packet_total > 1:
+				fp = open('success_log.txt', 'a')
+				fp.write('id:[%d], time_cost:[%d], payload_size:[%d], speed:[%f]\n' %(self.id, time_cost, packet_total*512, (packet_total*512.0)/time_cost))
+				fp.close()
 			print 'payload receives successfully.'
 
 

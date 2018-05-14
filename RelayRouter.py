@@ -226,11 +226,11 @@ class RelayRouter():
 
 
 	def send_ack_pkt(self, pkt):
-		time_needed = self._buffer_used / self._bandwidth
+		#time_needed = self._buffer_used / self._bandwidth
 		seq = pkt.get_seq()
 		recv = pkt.get_from()
 		reply = Packet.ACKPacket(seq, self.id, recv)
-		reply.time_require = time_needed
+		reply.time_require = 0
 		global_send(reply)
 
 	def send(self, dest, pkt):  #dest is the ip of receiver point 

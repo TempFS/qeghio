@@ -8,7 +8,7 @@ import random
 from const import *
 local_delay = 5
 client_count = 5000
-p = 0.1
+p = 0.3
 def load_region_distribution():
     region_distribution = {}
     fp = open('region_distribution.txt', 'r')
@@ -26,15 +26,20 @@ def load_region_distribution():
     fp.close()
     return region_distribution
 
-def random_send_packet(c):
-    r = random.random()
+def random_send_packet(c, flag):
+    if flag == False:
+        r = random.random()
+        packet_length = 25*1024
+    else:
+        r = 0
+        packet_length = 1
     if r > p:
         return
     sender = random.choice(c)
     receiver = random.choice(c)
     while receiver == sender:
         receiver = random.choice(c)
-    sender.send_to_server(50*1024, receiver.id)
+    sender.send_to_server(packet_length, receiver.id)
 
 def main():
     region_distribution = load_region_distribution()
@@ -63,10 +68,14 @@ def main():
 
     RelayRouter.d.update_global_table()
     ct = get_current_time()
-    while ct < 300000:
+    while ct < 500000:
         print ct
+        if ct < 20000:
+            random_send_packet(c, True)
+        elif ct > 50000:
+            random_send_packet(c, False)
         channel.ch.handle()
-        random_send_packet(c)
+
         for _ in p:
             _.handle()
         for _ in c:
