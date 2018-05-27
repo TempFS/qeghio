@@ -29,7 +29,7 @@ def load_region_distribution():
 def random_send_packet(c, flag):
     if flag == False:
         r = random.random()
-        packet_length = 25*1024
+        packet_length = 50*1024
     else:
         r = 0
         packet_length = 1
@@ -50,8 +50,11 @@ def main():
     for region in region_distribution:
         j = 0
         region_table.append(region)
-        while j < region_distribution[region]:
-            p.append(RelayRouter.RelayRouter(i, random.randint(2*1024*1024, 20*1024*1024), region, 200*1024*1024, 0, ONLINE))
+        region_node_count = region_distribution[region] / 4
+        if region_node_count == 0:
+            region_node_count = 1
+        while j < region_node_count:
+            p.append(RelayRouter.RelayRouter(i, 4*random.randint(2*1024*1024, 20*1024*1024), region, 200*1024*1024, 0, ONLINE))
             i+=1
             j+=1
     RelayRouter.d.update_global_table()
@@ -68,12 +71,16 @@ def main():
 
     RelayRouter.d.update_global_table()
     ct = get_current_time()
+    for _ in p:
+        _.generate_fast_note_table()
     while ct < 500000:
         print ct
-        if ct < 20000:
-            random_send_packet(c, True)
-        elif ct > 50000:
-            random_send_packet(c, False)
+        if ct % 1000 == 0:
+            for _ in p:
+                _.dump_fast_note_table()
+
+
+        random_send_packet(c, False)
         channel.ch.handle()
 
         for _ in p:

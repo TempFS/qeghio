@@ -89,7 +89,7 @@ class Client():
 			#index = int(fs(self.s) * len(relay_node_table))
 			#print 'index=%d' %index
 			print 'Find a close node.'
-			index = random.randint(0, 5)
+			index = random.randint(0, 10)
 			return relay_node_table[index][0]
 
 

@@ -105,6 +105,18 @@ class RelayRouter():
 	def circuit_extended(self):
 		pass
 
+	def generate_fast_note_table(self):
+		g_t = d.get_global_table()
+		for _ in g_t:
+			if g_t[_] != self and g_t[_].region == self.region:
+				self._fastnote_table[g_t[_].id] = 1000.0
+
+	def dump_fast_note_table(self):
+		sorted_x = sorted(self._fastnote_table.items(), key=operator.itemgetter(1))
+		output = str(sorted_x)
+		output = "[%d] %s" % (self.id, output)
+		logging.info(output)
+
 	def establish_rendezvous(self):
 		rend_id = self.current_handle.get_circuit_id()
 		current_circuit_id = rend_id
