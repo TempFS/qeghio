@@ -7,8 +7,6 @@ from const import *
 local_delay = 10
 
 
-
-
 class Channel():
 	def __init__(self):
 		self.delay_table = {}
@@ -51,6 +49,7 @@ class Channel():
 				return -1
 		else:
 			return -1
+		#TODO: add some random variable.
 		'''
 		sigma = 0.6
 		np.random.seed()

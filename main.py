@@ -8,6 +8,7 @@ import random
 from const import *
 local_delay = 5
 client_count = 5000
+global_s = 100
 p = 0.3
 def load_region_distribution():
     region_distribution = {}
@@ -61,7 +62,7 @@ def main():
     total_delay = i
     c = []
     for i in range(client_count):
-        tmp = client.Client(10000+i, 2000000,random.choice(region_table), 0.1)
+        tmp = client.Client(10000+i, 2000000,random.choice(region_table), global_s)
         tmp._entrynode = []
         rnd = random.randint(1,total_delay-4)
         tmp._entrynode.append(rnd)

@@ -3,6 +3,7 @@ import sys
 
 current_time = 0
 
+# 1ms for one timeslice
 def add_a_timeslice():
 	global current_time
 	current_time += 1

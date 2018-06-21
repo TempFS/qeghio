@@ -9,8 +9,11 @@ global_entry_node = []  #store the id of entry node (the first node).
 
 def fs(s):
 	x = random.random()
-	rst =  1.0 * (pow(2, s*x) - 1) / (pow(2,x) - 1)
-	return 0
+	if s == 0:
+		rst = x
+	else:
+		rst =  1.0 * (pow(2, s*x) - 1) / (pow(2,s) - 1)
+	return rst
 
 class Circuit():
 	def __init__(self, id, route_table, dest, n):
